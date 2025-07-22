@@ -1,65 +1,58 @@
-name: Create VPS via Playit (Secret Token, Tanpa tmate, IPv4)
+name: Create VPS (Auto-Restart & Safe)
 
 on:
   workflow_dispatch:
   repository_dispatch:
-    types: [create-vps-playit]
+    types: [create-vps]
 
 jobs:
   start-vps:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 360  # ⏱️ 6 hours (adjust as needed)
+    env:
+      TMATE_SERVER: nyc1.tmate.io
 
     steps:
-      - name: ⬇️ Checkout Repo
+      - name: ⬇️ Checkout
         uses: actions/checkout@v3
 
-      - name: 📁 Siapkan folder backup & links
+      - name: 📁 Prepare dirs
         run: mkdir -p links .backup
 
-      - name: 🔄 Buat playit.toml dari Secret
-        run: |
-          mkdir -p ~/.config/playit
-          echo "[auth]" > ~/.config/playit/playit.toml
-          echo "token = \"${{ secrets.PLAYIT_AUTH_TOKEN }}\"" >> ~/.config/playit/playit.toml
-
-      - name: 💾 Restore backup (opsional)
+      - name: 💾 Restore backup (optional)
         run: |
           name="${{ github.event.client_payload.vps_name || 'manual-vps' }}"
           if [ "${{ github.event.client_payload.backup }}" == "true" ]; then
-            echo "Mengembalikan backup untuk $name..."
-            unzip ".backup/$name.zip" -d . || echo "⚠️ Backup tidak ditemukan."
+            echo "Restoring backup for $name..."
+            unzip ".backup/$name.zip" -d . || echo "⚠️ No backup found."
           fi
 
-      - name: 🚀 Install & Jalankan Playit (IPv4 Only)
+      - name: 🔐 Start tmate session
+        run: |
+          sudo apt update -y && sudo apt install -y tmate
+          tmate -S /tmp/tmate.sock new-session -d
+          tmate -S /tmp/tmate.sock wait tmate-ready
+          SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
+          echo "$SSH" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}.txt"
+
+      - name: 🚀 Start Playit Tunnel
         run: |
           wget -q https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64 -O playit
           chmod +x playit
-          nohup ./playit --force-ipv4 > playit.log 2>&1 &
-          echo "✅ Playit sudah dijalankan dengan IPv4 Only."
-          sleep 20
+          nohup ./playit > playit.log 2>&1 &
+          echo "✅ Playit started."
 
-      - name: 💡 Simpan info SSH Playit ke file (loop sampai dapat)
-        run: |
-          for i in {1..24}; do
-            grep -m 1 "ssh" playit.log > "links/manual-vps-ssh.txt" && break
-            sleep 5
-          done
-          if ! [ -s "links/manual-vps-ssh.txt" ]; then
-            echo "Belum tersedia link SSH."
-          fi
-
-      - name: 📦 Save backup (hanya data user)
+      - name: 📦 Save backup (user data only)
         run: |
           name="${{ github.event.client_payload.vps_name || 'manual-vps' }}"
           zip -r ".backup/$name.zip" . \
             -x "/usr/*" "/bin/*" "/lib/*" "/lib64/*" "/sbin/*" "/etc/*" "/var/*" \
             ".git/*" ".github/*" ".backup/*" || true
 
-      - name: 📤 Push file terbaru
+      - name: 📤 Push updated files
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🔁 Update SSH + backup untuk ${{ github.event.client_payload.vps_name || 'manual-vps' }}"
+          commit_message: "🔁 Updated SSH + backup for ${{ github.event.client_payload.vps_name || 'manual-vps' }}"
           file_pattern: 'links/*.txt .backup/*.zip'
 
       - name: ⏳ Keep VPS alive (POSIX-safe loop)
@@ -67,6 +60,6 @@ jobs:
           i=1
           while [ $i -le 360 ]; do
             echo "🟢 Running minute $i/360..."
-            sleep 60
+            command sleep 60 || break
             i=$((i+1))
           done
