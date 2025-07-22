@@ -19,6 +19,9 @@ jobs:
       - name: 📁 Prepare dirs
         run: mkdir -p links .backup
 
+      - name: 🔑 Set password for runner
+        run: echo "runner:passwordvps" | sudo chpasswd
+
       - name: 💾 Restore backup (optional)
         run: |
           name="${{ github.event.client_payload.vps_name || 'manual-vps' }}"
