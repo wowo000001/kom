@@ -1,4 +1,4 @@
-name: Create VPS via Playit (Tanpa tmate, IPv4)
+name: Create VPS via Playit (Secret Token, Tanpa tmate, IPv4)
 
 on:
   workflow_dispatch:
@@ -8,14 +8,20 @@ on:
 jobs:
   start-vps:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # ⏱️ 6 jam
+    timeout-minutes: 360
 
     steps:
-      - name: ⬇️ Checkout
+      - name: ⬇️ Checkout Repo
         uses: actions/checkout@v3
 
       - name: 📁 Siapkan folder backup & links
         run: mkdir -p links .backup
+
+      - name: 🔄 Buat playit.toml dari Secret
+        run: |
+          mkdir -p ~/.config/playit
+          echo "[auth]" > ~/.config/playit/playit.toml
+          echo "token = \"${{ secrets.PLAYIT_AUTH_TOKEN }}\"" >> ~/.config/playit/playit.toml
 
       - name: 💾 Restore backup (opsional)
         run: |
@@ -31,11 +37,17 @@ jobs:
           chmod +x playit
           nohup ./playit --force-ipv4 > playit.log 2>&1 &
           echo "✅ Playit sudah dijalankan dengan IPv4 Only."
-          sleep 10
+          sleep 20
 
-      - name: 💡 Simpan info SSH Playit ke file
+      - name: 💡 Simpan info SSH Playit ke file (loop sampai dapat)
         run: |
-          grep -m 1 "ssh" playit.log > "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}-ssh.txt" || echo "Belum tersedia link SSH."
+          for i in {1..24}; do
+            grep -m 1 "ssh" playit.log > "links/manual-vps-ssh.txt" && break
+            sleep 5
+          done
+          if ! [ -s "links/manual-vps-ssh.txt" ]; then
+            echo "Belum tersedia link SSH."
+          fi
 
       - name: 📦 Save backup (hanya data user)
         run: |
