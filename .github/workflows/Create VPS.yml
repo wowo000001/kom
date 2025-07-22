@@ -1,5 +1,3 @@
-name: Create VPS (Auto-Restart & Safe + Ngrok SSH)
-
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -36,22 +34,19 @@ jobs:
           SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
           echo "$SSH" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}-tmate.txt"
 
-      - name: 🚪 Start ngrok TCP tunnel for SSH
+      - name: 🚪 Start Playit TCP tunnel for SSH
         env:
-          NGROK_TOKEN: ${{ secrets.NGROK_TOKEN }}
+          PLAYIT_TOKEN: ${{ secrets.PLAYIT_TOKEN }}
         run: |
-          # Install ngrok
-          wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
-          tar -xzf ngrok-v3-stable-linux-amd64.tgz
-          sudo mv ngrok /usr/local/bin
+          # Install Playit
+          wget -q https://playit.gg/download/playit-linux-amd64 -O playit
+          chmod +x playit
+          sudo mv playit /usr/local/bin
 
-          # Set authtoken
-          ngrok config add-authtoken "$NGROK_TOKEN"
+          # Start Playit tunnel for port 22 (SSH)
+          nohup playit -p 22 --token "$PLAYIT_TOKEN" > playit.log 2>&1 &
 
-          # Start ngrok TCP tunnel for port 22 (SSH)
-          nohup ngrok tcp 22 --log=stdout > ngrok.log 2>&1 &
-
-          # Tunggu ngrok up (maks 20 detik)
+          # Tunggu Playit up (maks 20 detik)
           for i in {1..20}; do
             sleep 1
             if curl -s http://127.0.0.1:4040/api/tunnels | grep -q 'tcp://'; then
@@ -59,15 +54,15 @@ jobs:
             fi
           done
 
-          # Ambil URL ngrok
-          NGROK_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | grep -oE 'tcp://[0-9a-zA-Z\.\-]+:[0-9]+' | head -n1)
-          if [ -z "$NGROK_URL" ]; then
-            echo "❌ Ngrok tunnel gagal dibuat. Cek ngrok.log untuk detail."
-            cat ngrok.log
+          # Ambil URL Playit
+          PLAYIT_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | grep -oE 'tcp://[0-9a-zA-Z\.\-]+:[0-9]+' | head -n1)
+          if [ -z "$PLAYIT_URL" ]; then
+            echo "❌ Playit tunnel gagal dibuat. Cek playit.log untuk detail."
+            cat playit.log
             exit 1
           fi
-          echo "Ngrok SSH URL: $NGROK_URL"
-          echo "$NGROK_URL" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}-ngrok.txt"
+          echo "Playit SSH URL: $PLAYIT_URL"
+          echo "$PLAYIT_URL" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}-playit.txt"
 
       - name: 📦 Save backup (user data only)
         run: |
