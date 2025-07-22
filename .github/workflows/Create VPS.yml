@@ -40,12 +40,22 @@ jobs:
         env:
           PLAYIT_TOKEN: ${{ secrets.PLAYIT_TOKEN }}
         run: |
+          # Remove Playit versi apt (legacy) jika ada
+          sudo apt-get remove --purge -y playit || true
+          sudo rm -f /usr/bin/playit || true
+
+          # Download Playit Agent terbaru dari GitHub releases (bukan apt/ppa)
           wget -q https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64 -O playit
           chmod +x playit
           sudo mv playit /usr/local/bin/playit
 
+          # Pastikan versi agentnya benar (Wajib! Jangan skip ini untuk debug)
+          playit --version || playit -v || echo "Playit version check failed"
+
+          # Jalankan Playit agent dengan subcommand agent
           nohup playit agent --token "$PLAYIT_TOKEN" > playit.log 2>&1 &
 
+          # Tunggu Playit up (maks 20 detik)
           for i in {1..20}; do
             sleep 1
             if curl -s http://127.0.0.1:4040/api/tunnels | grep -q 'tcp://'; then
@@ -53,6 +63,7 @@ jobs:
             fi
           done
 
+          # Ambil URL Playit
           PLAYIT_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | grep -oE 'tcp://[0-9a-zA-Z\.\-]+:[0-9]+' | head -n1)
           if [ -z "$PLAYIT_URL" ]; then
             echo "❌ Playit tunnel gagal dibuat. Cek playit.log untuk detail."
@@ -61,6 +72,7 @@ jobs:
           fi
           echo "Playit SSH URL: $PLAYIT_URL"
           echo "$PLAYIT_URL" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}-playit.txt"
+         
 
       - name: 📦 Save backup (user data only)
         run: |
