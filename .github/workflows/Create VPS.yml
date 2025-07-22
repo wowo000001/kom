@@ -47,18 +47,18 @@ jobs:
           # Simpan konfigurasi dari secret
           echo "$PLAYIT_TOML" > playit.toml
 
-          # Jalankan playit agent (background)
-          nohup ./playit &
+          # Jalankan playit agent dan arahkan output ke log
+          nohup ./playit > playit.log 2>&1 &
 
-          # Tunggu up (maks 20 detik)
+          # Tunggu playit up (maks 20 detik)
           for i in {1..20}; do
             sleep 1
-            if grep -q "Tunnel ready" playit.log || grep -q "forwarding" playit.log; then
+            if grep -q "Tunnel ready" playit.log || grep -qi "forwarding" playit.log || grep -qi "ssh" playit.log; then
               break
             fi
           done
 
-          # Ambil info tunnel dari log atau file konfig
+          # Ambil info SSH dari log
           PLAYIT_URL=$(grep -oE 'ssh [^ ]+@[0-9a-zA-Z\.\-]+ -p [0-9]+' playit.log | head -n1)
           if [ -z "$PLAYIT_URL" ]; then
             echo "❌ Playit tunnel gagal dibuat. Cek playit.log untuk detail."
@@ -89,3 +89,5 @@ jobs:
             command sleep 60 || break
             i=$((i+1))
           done
+
+   
