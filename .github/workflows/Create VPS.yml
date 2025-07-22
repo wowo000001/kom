@@ -8,7 +8,7 @@ on:
 jobs:
   start-vps:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 hours
+    timeout-minutes: 360
 
     steps:
       - name: ⬇️ Checkout
@@ -40,16 +40,12 @@ jobs:
         env:
           PLAYIT_TOKEN: ${{ secrets.PLAYIT_TOKEN }}
         run: |
-          # Tambah repo & install Playit (versi terbaru)
-          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
-          sudo apt update
-          sudo apt install -y playit
+          wget -q https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64 -O playit
+          chmod +x playit
+          sudo mv playit /usr/local/bin/playit
 
-          # Jalankan Playit agent dengan token
           nohup playit agent --token "$PLAYIT_TOKEN" > playit.log 2>&1 &
 
-          # Tunggu Playit siap (max 20s)
           for i in {1..20}; do
             sleep 1
             if curl -s http://127.0.0.1:4040/api/tunnels | grep -q 'tcp://'; then
@@ -57,7 +53,6 @@ jobs:
             fi
           done
 
-          # Ambil URL tunnel Playit
           PLAYIT_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | grep -oE 'tcp://[0-9a-zA-Z\.\-]+:[0-9]+' | head -n1)
           if [ -z "$PLAYIT_URL" ]; then
             echo "❌ Playit tunnel gagal dibuat. Cek playit.log untuk detail."
@@ -89,3 +84,4 @@ jobs:
             i=$((i+1))
           done
 
+     
