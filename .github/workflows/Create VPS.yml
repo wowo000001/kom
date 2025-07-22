@@ -1,4 +1,4 @@
-name: VPS Runner
+name: Create VPS (Auto-Restart & Safe + Playit SSH)
 
 on:
   workflow_dispatch:
@@ -8,27 +8,27 @@ on:
 jobs:
   start-vps:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 360  # 6 jam
 
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@v3
 
-      - name: 📁 Prepare dirs
+      - name: 📁 Siapkan direktori
         run: mkdir -p links .backup
 
-      - name: 💾 Restore backup (optional)
+      - name: 💾 Restore backup (opsional)
         run: |
           name="${{ github.event.client_payload.vps_name || 'manual-vps' }}"
           if [ "${{ github.event.client_payload.backup }}" == "true" ]; then
-            echo "Restoring backup for $name..."
-            unzip ".backup/$name.zip" -d . || echo "⚠️ No backup found."
+            echo "Restore backup untuk $name..."
+            unzip ".backup/$name.zip" -d . || echo "⚠️ Backup tidak ditemukan."
           fi
 
-      - name: 🔑 Set password for runner
+      - name: 🔑 Set password untuk runner
         run: echo "runner:passwordvps" | sudo chpasswd
 
-      - name: 🔐 Start tmate session
+      - name: 🔐 Mulai tmate session
         run: |
           sudo apt update -y && sudo apt install -y tmate
           tmate -S /tmp/tmate.sock new-session -d
@@ -36,43 +36,37 @@ jobs:
           SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
           echo "$SSH" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}-tmate.txt"
 
-      - name: 🚪 Start Playit TCP tunnel for SSH
+      - name: 🚪 Mulai playit.gg tunnel untuk SSH
         env:
-          PLAYIT_TOKEN: ${{ secrets.PLAYIT_TOKEN }}
+          PLAYIT_TOML: ${{ secrets.PLAYIT_TOML }}
         run: |
-          # Remove Playit versi apt (legacy) jika ada
-          sudo apt-get remove --purge -y playit || true
-          sudo rm -f /usr/bin/playit || true
-
-          # Download Playit Agent terbaru dari GitHub releases (bukan apt/ppa)
-          wget -q https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64 -O playit
+          # Install playit-cli
+          wget -O playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
           chmod +x playit
-          sudo mv playit /usr/local/bin/playit
 
-          # Pastikan versi agentnya benar (Wajib! Jangan skip ini untuk debug)
-          playit --version || playit -v || echo "Playit version check failed"
+          # Simpan konfigurasi dari secret
+          echo "$PLAYIT_TOML" > playit.toml
 
-          # Jalankan Playit agent dengan subcommand agent
-          nohup playit agent --token "$PLAYIT_TOKEN" > playit.log 2>&1 &
+          # Jalankan playit agent (background)
+          nohup ./playit &
 
-          # Tunggu Playit up (maks 20 detik)
+          # Tunggu up (maks 20 detik)
           for i in {1..20}; do
             sleep 1
-            if curl -s http://127.0.0.1:4040/api/tunnels | grep -q 'tcp://'; then
+            if grep -q "Tunnel ready" playit.log || grep -q "forwarding" playit.log; then
               break
             fi
           done
 
-          # Ambil URL Playit
-          PLAYIT_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | grep -oE 'tcp://[0-9a-zA-Z\.\-]+:[0-9]+' | head -n1)
+          # Ambil info tunnel dari log atau file konfig
+          PLAYIT_URL=$(grep -oE 'ssh [^ ]+@[0-9a-zA-Z\.\-]+ -p [0-9]+' playit.log | head -n1)
           if [ -z "$PLAYIT_URL" ]; then
             echo "❌ Playit tunnel gagal dibuat. Cek playit.log untuk detail."
             cat playit.log
             exit 1
           fi
-          echo "Playit SSH URL: $PLAYIT_URL"
+          echo "Playit SSH Info: $PLAYIT_URL"
           echo "$PLAYIT_URL" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}-playit.txt"
-         
 
       - name: 📦 Save backup (user data only)
         run: |
@@ -84,7 +78,7 @@ jobs:
       - name: 📤 Push updated files
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🔁 Updated SSH + backup for ${{ github.event.client_payload.vps_name || 'manual-vps' }}"
+          commit_message: "🔁 Update SSH + backup untuk ${{ github.event.client_payload.vps_name || 'manual-vps' }}"
           file_pattern: 'links/*.txt .backup/*.zip'
 
       - name: ⏳ Keep VPS alive (POSIX-safe loop)
@@ -95,5 +89,3 @@ jobs:
             command sleep 60 || break
             i=$((i+1))
           done
-
-     
