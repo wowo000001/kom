@@ -1,3 +1,5 @@
+name: VPS Runner
+
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -38,10 +40,11 @@ jobs:
         env:
           PLAYIT_TOKEN: ${{ secrets.PLAYIT_TOKEN }}
         run: |
-          # Install Playit
-          wget -q https://playit.gg/download/playit-linux-amd64 -O playit
-          chmod +x playit
-          sudo mv playit /usr/local/bin
+          # Tambahkan Playit APT repo dan install Playit Agent terbaru
+          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
+          sudo apt update
+          sudo apt install -y playit
 
           # Start Playit tunnel for port 22 (SSH)
           nohup playit -p 22 --token "$PLAYIT_TOKEN" > playit.log 2>&1 &
@@ -85,4 +88,3 @@ jobs:
             command sleep 60 || break
             i=$((i+1))
           done
-          
